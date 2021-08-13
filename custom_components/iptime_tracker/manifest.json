@@ -1,0 +1,11 @@
+{
+    "domain": "iptime_tracker",
+    "name": "ipTIME Tracker",
+    "documentation": "https://github.com/junskr/iptime_tracker/tree/main/custom_components/iptime_tracker",
+    "codeowners": ["@junskr"],
+    "requirements": [],
+    "dependencies": [],
+    "iot_class": "local_polling",
+    "version": "1.0.0",
+    "config_flow": false
+  }
