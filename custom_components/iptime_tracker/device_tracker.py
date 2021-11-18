@@ -193,7 +193,7 @@ class IPTimeAPI(DeviceScanner):
             response_2g = await self.session.get(url_2g, headers=self.headers, cookies=cookies, timeout=10)
             response_5g = await self.session.get(url_5g, headers=self.headers, cookies=cookies, timeout=10)
         except:
-            _LOGGER.warning(f"WLAN Connect Error > {self._url}")
+            _LOGGER.debug(f"WLAN Connect Error > {self._url}")
             await self.logout()
             return result_dict
 
@@ -202,13 +202,13 @@ class IPTimeAPI(DeviceScanner):
             response_2g_dict = self.json_parsing(response_2g_json)
             result_dict.update(response_2g_dict)
         except ValueError:
-            _LOGGER.warning(f"Session Value Error(2.4g) > {self._url}")
+            _LOGGER.debug(f"Session Value Error(2.4g) > {self._url}")
             await self.logout()
         except KeyError:
-            _LOGGER.warning(f"Session Key Error(2.4g) > {self._url}")
+            _LOGGER.debug(f"Session Key Error(2.4g) > {self._url}")
             await self.logout()
         except Exception:
-            _LOGGER.warning(f"Not found [stalist](2.4g) > {self._url}")
+            _LOGGER.debug(f"Not found [stalist](2.4g) > {self._url}")
             await self.logout()
 
         try:
@@ -216,13 +216,13 @@ class IPTimeAPI(DeviceScanner):
             response_5g_dict = self.json_parsing(response_5g_json)
             result_dict.update(response_5g_dict)
         except ValueError:
-            _LOGGER.warning(f"Session Value Error(5g) > {self._url}")
+            _LOGGER.debug(f"Session Value Error(5g) > {self._url}")
             await self.logout()
         except KeyError:
-            _LOGGER.warning(f"Session Key Error(5g) > {self._url}")
+            _LOGGER.debug(f"Session Key Error(5g) > {self._url}")
             await self.logout()
         except Exception:
-            _LOGGER.warning(f"Not found [stalist](5g) > {self._url}")
+            _LOGGER.debug(f"Not found [stalist](5g) > {self._url}")
             await self.logout()
 
         return result_dict
@@ -308,3 +308,5 @@ class IPTimeSensor():
                 self._state = self.result_dict[self._target_mac].get('state')
             else:
                 self._state = 'not_home'
+        else:
+            self._state = 'N/A'
