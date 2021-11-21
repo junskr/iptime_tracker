@@ -6,26 +6,25 @@ from homeassistant.components.device_tracker import PLATFORM_SCHEMA, DeviceScann
 import homeassistant.helpers.config_validation as cv
 
 from datetime import timedelta
+from bs4 import BeautifulSoup
 import voluptuous as vol
 import asyncio
 import logging
-import json
 import re
 
-from .const import CONF_URL, CONF_ID, CONF_PASSWORD, CONF_TARGET, CONF_NAME, CONF_MAC
+from .const import CONF_URL, CONF_ID, CONF_PASSWORD, CONF_TARGET, CONF_NAME, CONF_MAC, CONF_INTERVAL
 
-LOGIN_URN   = "/m_handler.cgi"
-LOGOUT_URN  = "/m_login.cgi?logout=1"
-HOSTINFO_URN = "/login/hostinfo2.cgi"
-WLAN_2G_URN = "/cgi/iux_get.cgi?tmenu=wirelessconf&smenu=macauth&act=status&wlmode=2g&bssidx=0"
-WLAN_5G_URN = "/cgi/iux_get.cgi?tmenu=wirelessconf&smenu=macauth&act=status&wlmode=5g&bssidx=65536"
+LOGIN_URN   = '/sess-bin/login_handler.cgi'
+LOGOUT_URN  = '/sess-bin/login_session.cgi?logout=1'
+WLAN_2G_URN = '/sess-bin/timepro.cgi?tmenu=iframe&smenu=macauth_pcinfo_status&bssidx=0'
+WLAN_5G_URN = '/sess-bin/timepro.cgi?tmenu=iframe&smenu=macauth_pcinfo_status&bssidx=65536'
 
 _LOGGER = logging.getLogger(__name__)
 
-API_INTERVAL = timedelta(seconds=5)
-SCAN_INTERVAL = timedelta(seconds=3)
+API_LIMIT_INTERVAL = timedelta(seconds=5)
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
+    vol.Optional(CONF_INTERVAL, default=5): cv.positive_int,
     vol.Required(CONF_URL): cv.string,
     vol.Required(CONF_ID): cv.string,
     vol.Required(CONF_PASSWORD): cv.string,
@@ -42,6 +41,7 @@ async def async_setup_scanner(hass, config_entry, async_see, discovery_info=None
     user_pw = config_entry.get(CONF_PASSWORD)
     targets = config_entry.get(CONF_TARGET)
 
+    scan_interval = timedelta(seconds=config_entry.get(CONF_INTERVAL))
     sensors = []
 
     iAPI = IPTimeAPI(hass, url, user_id, user_pw)
@@ -69,7 +69,7 @@ async def async_setup_scanner(hass, config_entry, async_see, discovery_info=None
         finally:
             if not hass.is_stopping:
                 async_track_point_in_utc_time(
-                    hass, _async_update_interval, dt.utcnow() + SCAN_INTERVAL
+                    hass, _async_update_interval, dt.utcnow() + scan_interval
                 )
 
     await _async_update_interval(None)
@@ -85,18 +85,17 @@ class IPTimeAPI(DeviceScanner):
         self._url = url
         self._user_id = user_id
         self._user_pw = user_pw
-        self._ismobile = True
         self.result = {}
 
         self.headers = {
-            "User-Agent": "Mozilla/5.0 (Linux; Android 5.0; SM-G900P Build/LRX21T) AppleWebKit/537.36 \
-                (KHTML, like Gecko) Chrome/80.0.3987.132 Mobile Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) \
+                Chrome/96.0.4664.45 Safari/537.36",
             "Referer": url
         }
         self.efm_session_id = None
         self.session = async_get_clientsession(self._hass)
 
-    @Throttle(API_INTERVAL)
+    @Throttle(API_LIMIT_INTERVAL)
     async def async_update(self):
         """Update function for updating api information."""
         if self.efm_session_id:
@@ -111,11 +110,13 @@ class IPTimeAPI(DeviceScanner):
         """Login Function"""
         url = self._url + LOGIN_URN
         data = {
-            "captcha_file": "undefined",
-            "captcha_code": None,
-            "captcha_on": 0,
-            "username": self._user_id,
-            "passwd": self._user_pw,
+            'init_status': 1,
+            'captcha_on': 0,
+            'captcha_file': None,
+            'username': self._user_id,
+            'passwd': self._user_pw,
+            'default_passwd': '초기암호:admin(변경필요)',
+            'captcha_code': None
         }
         response = None
 
@@ -123,18 +124,12 @@ class IPTimeAPI(DeviceScanner):
             response = await self.session.post(url, headers=self.headers, data=data, timeout=30)
             self.efm_session_id = re.findall(re.compile(r"\w{16}"), await response.text())[0]
         except:
-            if response and self._ismobile:
-                if '<html><script> top.location = "/";</script></html>' in await response.text():
-                    await self.verify_mobile()
-                elif '<html><script> if(parent && parent.parent) parent.parent.location = "/";</script></html>' in await response.text():
-                    await self.verify_mobile()
-                elif '<html><script>parent.parent.location = "/m_login.cgi?noauto=1"; //session_timeout </script></html>' in await response.text():
-                    _LOGGER.error(f"{self._url}: Login Fail !! Please check your login account.")
-                else:
-                    _LOGGER.debug(await response.text())
-                    self._ismobile = False
+            if not response:
+                return False
+            elif '<html><script>parent.parent.location = "/sess-bin/login_session.cgi?noauto=1"; //session_timeout </script></html>' in await response.text():
+                _LOGGER.error(f"{self._url}: Login Fail !! Please check your login account.")
             else:
-                _LOGGER.error(f"{self._url}: Login Error !!")
+                _LOGGER.debug(await response.text())
             return False
 
         if self.efm_session_id:
@@ -148,37 +143,10 @@ class IPTimeAPI(DeviceScanner):
         """Logout Function"""
         self.efm_session_id = None
         url = self._url + LOGOUT_URN
-        await self.session.get(url, headers=self.headers, timeout=30)
-
-    async def verify_mobile(self):
-        url = self._url + HOSTINFO_URN
-        response = await self.session.get(url, headers=self.headers, timeout=30)
-        if "iux" not in await response.text():
-            _LOGGER.info(f"{self._url}: This firmware is not supported the mobile app.")
-            return False
-        if "iux_package_installed" not in await response.text():
-            _LOGGER.debug(f"{self._url}: This firmware already contains the mobile package.")
-            _LOGGER.error(f"{self._url}: Login Fail !! Please check your login account.")
-            return False
-
         try:
-            iux = int(re.findall(re.compile(r"iux=\d"), await response.text())[0].split('=')[1])
-            iux_package_installed = int(re.findall(re.compile(r"iux_package_installed=\d"), await response.text())[0].split('=')[1])
-            if iux:
-                if iux_package_installed:
-                    _LOGGER.debug(f"{self._url}: The mobile package is already installed.")
-                    _LOGGER.error(f"{self._url}: Login Fail !! Please check your login account.")
-                    return False
-                else:
-                    _LOGGER.error(f"{self._url}: Please install the mobile package.")
-                    return False
-            else:
-                _LOGGER.error(f"{self._url}: This page is not supported the mobile app.")
-                return False
+            await self.session.get(url, headers=self.headers, timeout=30)
         except:
-            _LOGGER.error(f"{self._url}: Verify_mobile Function Error")
-            return False
-
+            pass
 
     async def wlan_check(self):
         """Wlan Check Function"""
@@ -198,8 +166,9 @@ class IPTimeAPI(DeviceScanner):
             return result_dict
 
         try:
-            response_2g_json = json.loads(await response_2g.text())
-            response_2g_dict = self.json_parsing(response_2g_json)
+            soup = BeautifulSoup(await response_2g.text(), 'html.parser')
+            response_2g_list = soup.find_all('tr')
+            response_2g_dict = self.device_parsing(response_2g_list)
             result_dict.update(response_2g_dict)
         except ValueError:
             _LOGGER.debug(f"Session Value Error(2.4g) > {self._url}")
@@ -208,12 +177,13 @@ class IPTimeAPI(DeviceScanner):
             _LOGGER.debug(f"Session Key Error(2.4g) > {self._url}")
             await self.logout()
         except Exception:
-            _LOGGER.debug(f"Not found [stalist](2.4g) > {self._url}")
+            _LOGGER.debug(f"Not found [Table](2.4g) > {self._url}")
             await self.logout()
 
         try:
-            response_5g_json = json.loads(await response_5g.text())
-            response_5g_dict = self.json_parsing(response_5g_json)
+            soup = BeautifulSoup(await response_5g.text(), 'html.parser')
+            response_5g_list = soup.find_all('tr')
+            response_5g_dict = self.device_parsing(response_5g_list)
             result_dict.update(response_5g_dict)
         except ValueError:
             _LOGGER.debug(f"Session Value Error(5g) > {self._url}")
@@ -222,29 +192,32 @@ class IPTimeAPI(DeviceScanner):
             _LOGGER.debug(f"Session Key Error(5g) > {self._url}")
             await self.logout()
         except Exception:
-            _LOGGER.debug(f"Not found [stalist](5g) > {self._url}")
+            _LOGGER.debug(f"Not found [Table](5g) > {self._url}")
             await self.logout()
 
+        result_dict.update({'init': None})
         return result_dict
 
-
-    def json_parsing(self, response_json):
+    def device_parsing(self, response_list):
         result_dict = {}
-        if 'stalist' not in response_json:
-            raise Exception('Not found [stalist]')
+        if len(response_list) == 0:
+            raise Exception('Not found [Table]')
 
-        for device in response_json['stalist']:
-            if 'mac' in device:
-                time = f"{device['day']}일 {device['hour']}:{device['min']}:{device['sec']}"
-                state = "home"
-                result_dict[device['mac']] = {
-                        'name': device['pcname'],
-                        'time': time,
-                        'state': state
+        for device in response_list:
+            if len(device.find_all('td')) == 4:
+                onclick = device.find_all('td')[0]['onclick']
+                gray_text = device.find_all('td')[3]
+                ip = re.search(re.compile(r"\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3}"), gray_text.text).group()
+                if len(re.findall(re.compile(r"'.+?'"), onclick)) == 3:
+                    name = re.findall(re.compile(r"'.+?'"), onclick)[2].replace("'", "")
+                else:
+                    name = ip
+                result_dict[device.find_all('td')[0].text] = {
+                    'name': name,
+                    'ip': ip,
+                    'stay_time': device.find_all('td')[2].text,
+                    'state': 'home'
                 }
-            else:
-                continue
-
         return result_dict
 
 
@@ -258,6 +231,8 @@ class IPTimeSensor():
         self._target_mac = mac
         self._api = api
         self.result_dict = {}
+        self.error_count = 0
+        self.error_threshold = 3
 
     @property
     def device_id(self):
@@ -287,7 +262,7 @@ class IPTimeSensor():
         data['name'] = self._entity_id
         data['mac_address'] = self._target_mac
         if self._target_mac in self.result_dict:
-            data['stay_time'] = self.result_dict[self._target_mac].get('time')
+            data['stay_time'] = self.result_dict[self._target_mac].get('stay_time')
         else:
             data['stay_time'] = 'N/A'
         data['iptime_url'] = self._api._url
@@ -303,10 +278,15 @@ class IPTimeSensor():
             return
         await self._api.async_update()
         self.result_dict = self._api.result
+
         if self.result_dict:
+            self.error_count = 0
             if self._target_mac in self.result_dict:
                 self._state = self.result_dict[self._target_mac].get('state')
             else:
                 self._state = 'not_home'
         else:
-            self._state = 'N/A'
+            if self.error_count < self.error_threshold:
+                self.error_count += 1
+            else:
+                self._state = 'N/A'
