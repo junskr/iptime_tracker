@@ -107,7 +107,7 @@ Configure the sensors that will scrape the data.
 ---
 
 [hacs-shield]: https://img.shields.io/badge/HACS-Custom-41BDF5
-[version-shield]: https://img.shields.io/badge/version-v1.1.0-blue
+[version-shield]: https://img.shields.io/badge/version-v1.2.1-blue
 [buymecoffee-shield]: https://img.shields.io/badge/buy%20me%20a%20coffee-donate-yellow.svg
 [buymecoffee]: https://www.buymeacoffee.com/junskr
 [github-repository]: https://github.com/junskr/iptime_tracker
