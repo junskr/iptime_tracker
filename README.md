@@ -19,11 +19,12 @@ ipTIME Tracker for Home Assistnat #HA
 <br>
 
 ## Version History
-| Version | Date        | 내용                                    |
-| :-----: | :---------: | --------------------------------------- |
-| v1.0.0  | 2021.08.14  | Release beta version.                   |
-| v1.0.1  | 2021.11.19  | Modified logging level.                 |
-| v1.1.0  | 2021.11.22  | Changed algorithm. (Mobile UI -> PC UI) |
+| Version | Date        | 내용                                                                                 |
+| :-----: | :---------: | ------------------------------------------------------------------------------------ |
+| v1.0.0  | 2021.08.14  | Release beta version.                                                                |
+| v1.0.1  | 2021.11.19  | Modified logging level.                                                              |
+| v1.1.0  | 2021.11.22  | Changed algorithm. (Mobile UI -> PC UI) <br> 특징 - Mobile UI: 안정성, PC UI: 호환성  |
+| v1.2.0  | 2021.11.22  | Changed algorithm. (PC UI -> Integrated)                                             |
 
 <br>
 
@@ -55,6 +56,18 @@ device_tracker:
         mac: 'AA-BB-CC-DD-EE-FF'
       - name: 'Iphone'
         mac: 'BB-CC-DD-EE-FF-AA'        
+```
+
+### known_devices.yaml
+- 보통 자동으로 **track: true**가 되지만, 만약 구성요소에 Track 디바이스가 표시되지 않는다면 known_devices.yaml를 확인해보세요.
+
+```yaml
+iptime_디바이스이름:
+  name: iptime_디바이스이름
+  mac: 공유기주소_디바이스MAC
+  icon:
+  picture:
+  track: true
 ```
 
 ## Options
