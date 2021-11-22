@@ -25,6 +25,7 @@ ipTIME Tracker for Home Assistnat #HA
 | v1.0.1  | 2021.11.19  | Modified logging level.                                                              |
 | v1.1.0  | 2021.11.22  | Changed algorithm. (Mobile UI -> PC UI) <br> 특징 - Mobile UI: 안정성, PC UI: 호환성  |
 | v1.2.0  | 2021.11.22  | Changed algorithm. (PC UI -> Integrated)                                             |
+| v1.2.1  | 2021.11.22  | Removed unnecessary log messages.                                                    |
 
 <br>
 
