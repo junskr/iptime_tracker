@@ -26,6 +26,7 @@ ipTIME Tracker for Home Assistnat #HA
 | v1.1.0  | 2021.11.22  | Changed algorithm. (Mobile UI -> PC UI) <br> 특징 - Mobile UI: 안정성, PC UI: 호환성  |
 | v1.2.0  | 2021.11.22  | Changed algorithm. (PC UI -> Integrated)                                             |
 | v1.2.1  | 2021.11.22  | Removed unnecessary log messages.                                                    |
+| v1.2.2  | 2021.11.23  | Changed the variable name. (scan_interval -> interval_seconds)                       |
 
 <br>
 
@@ -48,7 +49,7 @@ ipTIME Tracker for Home Assistnat #HA
 ```yaml
 device_tracker:
   - platform: iptime_tracker
-    scan_interval: 10
+    interval_seconds: 10
     iptime_url: 'ipTIME 공유기 관리페이지 주소'
     iptime_id: !secret iptime_id
     iptime_pw: !secret iptime_pw
@@ -76,15 +77,15 @@ iptime_디바이스이름:
 Based on latest (pre) release <br>
 Configure the sensors that will scrape the data.
 
-| name           | description             | required | default | type          |
-| -------------- | ----------------------- | -------- | ------- | ------------- |
-| scan_interval  | 스캔 간격               | False    |    5    | int           |
-| iptime_url     | 공유기 관리페이지       | True     |         | string        |
-| iptime_id      | 관리자 아이디           | True     |         | string        |
-| iptime_pw      | 관리자 비밀번호         | True     |         | string        |
-| targets        | 트래킹 대상 리스트      | True     |         | string - list |
-| targets > name | 트래킹 대상의 표시 이름 | True     |         | string        |
-| targets > mac  | 트래킹 대상의 MAC 주소  | True     |         | string        |
+| name              | description             | required | default | type          |
+| ----------------- | ----------------------- | -------- | ------- | ------------- |
+| interval_seconds  | 스캔 간격(초)           | False    |    5    | int           |
+| iptime_url        | 공유기 관리페이지       | True     |         | string        |
+| iptime_id         | 관리자 아이디           | True     |         | string        |
+| iptime_pw         | 관리자 비밀번호         | True     |         | string        |
+| targets           | 트래킹 대상 리스트      | True     |         | string - list |
+| targets > name    | 트래킹 대상의 표시 이름 | True     |         | string        |
+| targets > mac     | 트래킹 대상의 MAC 주소  | True     |         | string        |
 
 <br>
 
