@@ -4,6 +4,7 @@ from homeassistant.helpers.event import async_track_point_in_utc_time
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.components.device_tracker import PLATFORM_SCHEMA, DeviceScanner
 import homeassistant.helpers.config_validation as cv
+from homeassistant.components.device_tracker.const import CONF_SCAN_INTERVAL
 
 from datetime import timedelta
 from bs4 import BeautifulSoup
@@ -20,7 +21,7 @@ from .const import (
     CONF_TARGET,
     CONF_NAME,
     CONF_MAC,
-    CONF_INTERVAL,
+    DEFAULT_INTERVAL,
 )
 
 HOSTINFO_URN = "/login/hostinfo2.cgi"
@@ -39,7 +40,6 @@ API_LIMIT_INTERVAL = timedelta(seconds=4)
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
-        vol.Optional(CONF_INTERVAL, default=5): cv.positive_int,
         vol.Required(CONF_URL): cv.string,
         vol.Required(CONF_ID): cv.string,
         vol.Required(CONF_PASSWORD): cv.string,
@@ -63,7 +63,7 @@ async def async_setup_scanner(hass, config_entry, async_see, discovery_info=None
     user_pw = config_entry.get(CONF_PASSWORD)
     targets = config_entry.get(CONF_TARGET)
 
-    scan_interval = timedelta(seconds=config_entry.get(CONF_INTERVAL))
+    scan_interval = config_entry.get(CONF_SCAN_INTERVAL, timedelta(seconds=DEFAULT_INTERVAL))
     sensors = []
 
     iAPI = IPTimeAPI(hass, url, user_id, user_pw)
