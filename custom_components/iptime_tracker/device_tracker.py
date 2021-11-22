@@ -489,8 +489,6 @@ class IPTimeSensor:
             else:
                 data["stay_time"] = "N/A"
                 data["band"] = "N/A"
-        else:
-            data["msg"] = "Connect Error"
         data["iptime_url"] = self._api._url
         self._state_attributes = data
         return data
