@@ -1,4 +1,4 @@
-"""Platform for sensor integration."""
+"""Platform for tracker integration."""
 from homeassistant.util import dt, slugify, Throttle  # for update interval
 from homeassistant.helpers.event import async_track_point_in_utc_time
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -22,20 +22,22 @@ from .const import (
     CONF_NAME,
     CONF_MAC,
     DEFAULT_INTERVAL,
+    HOSTINFO_URN,
+    LOGIN_URN,
+    LOGOUT_URN,
+    WLAN_2G_URN,
+    WLAN_5G_URN,
+    MESH_URN,
+    M_LOGIN_URN,
+    M_LOGOUT_URN,
+    M_WLAN_2G_URN,
+    M_WLAN_5G_URN,
+    M_MESH_URN,
+    MESH_STATION_URN,
+    TIME_OUT,
 )
 
-HOSTINFO_URN = "/login/hostinfo2.cgi"
-LOGIN_URN = "/sess-bin/login_handler.cgi"
-LOGOUT_URN = "/sess-bin/login_session.cgi?logout=1"
-WLAN_2G_URN = "/sess-bin/timepro.cgi?tmenu=iframe&smenu=macauth_pcinfo_status&bssidx=0"
-WLAN_5G_URN = "/sess-bin/timepro.cgi?tmenu=iframe&smenu=macauth_pcinfo_status&bssidx=65536"
-M_LOGIN_URN = "/m_handler.cgi"
-M_LOGOUT_URN = "/m_login.cgi?logout=1"
-M_WLAN_2G_URN = "/cgi/iux_get.cgi?tmenu=wirelessconf&smenu=macauth&act=status&wlmode=2g&bssidx=0"
-M_WLAN_5G_URN = "/cgi/iux_get.cgi?tmenu=wirelessconf&smenu=macauth&act=status&wlmode=5g&bssidx=65536"
-
 _LOGGER = logging.getLogger(__name__)
-
 API_LIMIT_INTERVAL = timedelta(seconds=4)
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
@@ -71,6 +73,7 @@ async def async_setup_scanner(hass, config_entry, async_see, discovery_info=None
 
     for target in targets:
         iSensor = IPTimeSensor(target["name"], target["mac"], iAPI)
+        await iSensor.async_update()
         sensors += [iSensor]
 
     async def async_update(now):
@@ -101,23 +104,26 @@ async def async_setup_scanner(hass, config_entry, async_see, discovery_info=None
     await _async_update_interval(None)
     return True
 
-
 class IPTimeAPI(DeviceScanner):
     """ipTIME API"""
 
     def __init__(self, hass, url, user_id, user_pw):
         """Initialize the ipTIME API"""
         self._hass = hass
-        self._url = url
         self._user_id = user_id
         self._user_pw = user_pw
         self._ismobile = False
+        self._ismesh = False
         self.result = {}
+        if not "http" in url:
+            self._url = "http://" + url
+        else:
+            self._url = url
 
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) \
                 Chrome/96.0.4664.45 Safari/537.36",
-            "Referer": url,
+            "Referer": self._url,
         }
         self.efm_session_id = None
         self.session = async_get_clientsession(self._hass)
@@ -136,11 +142,13 @@ class IPTimeAPI(DeviceScanner):
                 return False
             if self._ismobile:
                 if await self.m_login():
+                    await self.m_check_mesh()
                     self.result = await self.m_wlan_check()
                 else:
                     return False
             else:
                 if await self.login():
+                    await self.check_mesh()
                     self.result = await self.wlan_check()
                 else:
                     return False
@@ -148,7 +156,7 @@ class IPTimeAPI(DeviceScanner):
     async def verify_mobile(self):
         url = self._url + HOSTINFO_URN
         try:
-            response = await self.session.get(url, headers=self.headers, timeout=30)
+            response = await self.session.get(url, headers=self.headers, timeout=TIME_OUT)
             product_name = (
                 re.search(
                     re.compile(r"product_name=[ a-zA-Z0-9]+"), await response.text()
@@ -162,7 +170,7 @@ class IPTimeAPI(DeviceScanner):
 
         if "iux" not in await response.text():
             self._ismobile = False
-            _LOGGER.info(f"{self._url}: [{product_name}]This firmware is not supported the mobile app.")
+            _LOGGER.debug(f"{self._url}: [{product_name}]This firmware is not supported the mobile app.")
             return True
         if "iux_package_installed" not in await response.text():
             self._ismobile = True
@@ -189,11 +197,11 @@ class IPTimeAPI(DeviceScanner):
                     return True
                 else:
                     self._ismobile = False
-                    _LOGGER.info(f"{self._url}: [{product_name}] Please install the mobile package.")
+                    _LOGGER.debug(f"{self._url}: [{product_name}] Please install the mobile package.")
                     return True
             else:
                 self._ismobile = False
-                _LOGGER.info(
+                _LOGGER.debug(
                     f"{self._url}: [{product_name}] This page is not supported the mobile app."
                 )
                 return True
@@ -202,22 +210,52 @@ class IPTimeAPI(DeviceScanner):
             _LOGGER.error(f"{self._url}: [{product_name}] Verify_mobile Function Error")
             return False
 
+    async def check_mesh(self):
+        url = self._url + MESH_URN
+        cookies = {"efm_session_id": self.efm_session_id}
+        try:
+            response = await self.session.get(url, headers=self.headers, cookies=cookies, timeout=TIME_OUT)
+            soup = BeautifulSoup(await response.text(), 'html.parser')
+            mesh_mode = soup.find('input', attrs={'id': 'mode_none'})
+            if not mesh_mode:
+                self._ismesh = False
+                return False
+            if 'checked' in mesh_mode.attrs:
+                self._ismesh = False
+                return False
+            else:
+                self._ismesh = True
+                return True
+        except:
+            return False
+
+    async def m_check_mesh(self):
+        url = self._url + M_MESH_URN
+        cookies = {"efm_session_id": self.efm_session_id}
+        try:
+            response = await self.session.get(url, headers=self.headers, cookies=cookies, timeout=TIME_OUT)
+            response_json = loads(await response.text())
+            if 'easymesh' in response_json:
+                self._ismesh = True
+                return True
+            else:
+                self._ismesh = False
+                return False
+        except:
+            return False
+
+
     async def login(self):
         """Login Function"""
         url = self._url + LOGIN_URN
         data = {
-            "init_status": 1,
-            "captcha_on": 0,
-            "captcha_file": None,
             "username": self._user_id,
             "passwd": self._user_pw,
-            "default_passwd": "초기암호:admin(변경필요)",
-            "captcha_code": None,
         }
         response = None
 
         try:
-            response = await self.session.post(url, headers=self.headers, data=data, timeout=30)
+            response = await self.session.post(url, headers=self.headers, data=data, timeout=TIME_OUT)
             self.efm_session_id = re.findall(re.compile(r"\w{16}"), await response.text())[0]
         except:
             if not response:
@@ -239,16 +277,13 @@ class IPTimeAPI(DeviceScanner):
         """Mobile Login Function"""
         url = self._url + M_LOGIN_URN
         data = {
-            "captcha_file": "undefined",
-            "captcha_code": None,
-            "captcha_on": 0,
             "username": self._user_id,
             "passwd": self._user_pw,
         }
         response = None
 
         try:
-            response = await self.session.post(url, headers=self.headers, data=data, timeout=30)
+            response = await self.session.post(url, headers=self.headers, data=data, timeout=TIME_OUT)
             self.efm_session_id = re.findall(re.compile(r"\w{16}"), await response.text())[0]
         except:
             if not response:
@@ -279,20 +314,24 @@ class IPTimeAPI(DeviceScanner):
     async def logout(self):
         """Logout Function"""
         self.efm_session_id = None
+        self._ismobile = False
+        self._ismesh = False
         url = self._url + LOGOUT_URN
         try:
-            await self.session.get(url, headers=self.headers, timeout=30)
+            await self.session.get(url, headers=self.headers, timeout=TIME_OUT)
         except:
             pass
 
     async def m_logout(self):
         """Mobile Logout Function"""
         self.efm_session_id = None
+        self._ismobile = False
+        self._ismesh = False
         url = self._url + M_LOGOUT_URN
         try:
-            await self.session.get(url, headers=self.headers, timeout=30)
+            await self.session.get(url, headers=self.headers, timeout=TIME_OUT)
         except:
-            pass
+            return False
 
     async def wlan_check(self):
         """Wlan Check Function"""
@@ -302,8 +341,8 @@ class IPTimeAPI(DeviceScanner):
         url_5g = self._url + WLAN_5G_URN
         cookies = {"efm_session_id": self.efm_session_id}
         try:
-            response_2g = await self.session.get(url_2g, headers=self.headers, cookies=cookies, timeout=20)
-            response_5g = await self.session.get(url_5g, headers=self.headers, cookies=cookies, timeout=20)
+            response_2g = await self.session.get(url_2g, headers=self.headers, cookies=cookies, timeout=TIME_OUT)
+            response_5g = await self.session.get(url_5g, headers=self.headers, cookies=cookies, timeout=TIME_OUT)
         except:
             _LOGGER.debug(f"WLAN Connect Error > {self._url}")
             await self.logout()
@@ -343,6 +382,20 @@ class IPTimeAPI(DeviceScanner):
             await self.logout()
             return result_dict
 
+        if self._ismesh:
+            try:
+                response_mesh_dict = await self.get_mesh_station()
+                result_dict.update(response_mesh_dict)
+            except KeyError:
+                _LOGGER.debug(f"Mobile Session Key Error(Mesh) > {self._url}")
+                await self.logout()
+                return {"session": False}
+            except:
+                await self.logout()
+                return result_dict
+
+        return result_dict
+
     async def m_wlan_check(self):
         """Wlan Check Function"""
         result_dict = {}
@@ -350,15 +403,9 @@ class IPTimeAPI(DeviceScanner):
         url_2g = self._url + M_WLAN_2G_URN
         url_5g = self._url + M_WLAN_5G_URN
         cookies = {"efm_session_id": self.efm_session_id}
-        try:
-            response_2g = await self.session.get(url_2g, headers=self.headers, cookies=cookies, timeout=10)
-            response_5g = await self.session.get(url_5g, headers=self.headers, cookies=cookies, timeout=10)
-        except:
-            _LOGGER.debug(f"WLAN Connect Error > {self._url}")
-            await self.m_logout()
-            return result_dict
 
         try:
+            response_2g = await self.session.get(url_2g, headers=self.headers, cookies=cookies, timeout=TIME_OUT)
             response_2g_json = loads(await response_2g.text())
             response_2g_dict = self.json_parsing(response_2g_json, band="2.4GHz")
             result_dict.update(response_2g_dict)
@@ -371,10 +418,12 @@ class IPTimeAPI(DeviceScanner):
             await self.m_logout()
             return {"session": False}
         except:
+            _LOGGER.debug(f"2.4G WLAN Connect Error > {self._url}")
             await self.m_logout()
             return result_dict
 
         try:
+            response_5g = await self.session.get(url_5g, headers=self.headers, cookies=cookies, timeout=TIME_OUT)
             response_5g_json = loads(await response_5g.text())
             response_5g_dict = self.json_parsing(response_5g_json, band="5GHz")
             result_dict.update(response_5g_dict)
@@ -387,8 +436,57 @@ class IPTimeAPI(DeviceScanner):
             await self.m_logout()
             return {"session": False}
         except:
+            _LOGGER.debug(f"5G WLAN Connect Error > {self._url}")
             await self.m_logout()
             return result_dict
+
+        if self._ismesh:
+            try:
+                response_mesh_dict = await self.get_mesh_station()
+                result_dict.update(response_mesh_dict)
+            except KeyError:
+                _LOGGER.debug(f"Mobile Session Key Error(Mesh) > {self._url}")
+                await self.m_logout()
+                return {"session": False}
+            except:
+                await self.m_logout()
+                return result_dict
+
+        return result_dict
+
+    async def get_mesh_station(self):
+        from datetime import timedelta
+
+        result_dict = {}
+        url = self._url + MESH_STATION_URN
+        cookies = {
+			'efm_session_id': self.efm_session_id
+		}
+        try:
+            response = await self.session.get(url, headers=self.headers, cookies=cookies, timeout=TIME_OUT)
+            device_list = loads(await response.text())['station']
+        except:
+            raise KeyError()
+
+        result_dict["session"] = True
+        for device in device_list:
+            if "connection" in device and device['connection'] != 'Unknown' and device['connection'] != 'WIRED':
+                connected_seconds = device['timestamp']-device['connected_ts']
+                days = timedelta(seconds=connected_seconds).days
+                (hours, minutes, seconds) = str(timedelta(seconds=connected_seconds)).split(':')
+                connected_time = f"{days}일 {hours}시간 {minutes}분 {seconds}초"
+                if 'ip' in device:
+                    ip = device["ip"]
+                else:
+                    ip = False
+
+                if "mac" in device:
+                    result_dict[device["mac"]] = {
+                        "ip": ip,
+                        "band": device['mode'],
+                        "stay_time": connected_time,
+                        "state": "home",
+                    }
         return result_dict
 
     def device_parsing(self, response_list, band):
@@ -426,11 +524,11 @@ class IPTimeAPI(DeviceScanner):
                     ip = device["ipaddr"]
                 else:
                     ip = False
-                time = f"{device['day']}일 {device['hour']}시간 {device['min']}분 {device['sec']}초"
+                connected_time = f"{device['day']}일 {device['hour']}시간 {device['min']}분 {device['sec']}초"
                 result_dict[device["mac"]] = {
                     "ip": ip,
                     "band": band,
-                    "stay_time": time,
+                    "stay_time": connected_time,
                     "state": "home",
                 }
             else:
@@ -486,9 +584,12 @@ class IPTimeSensor:
                 data["band"] = self.result_dict[self._target_mac].get("band")
                 if self.result_dict[self._target_mac].get("ip"):
                     data["ip"] = self.result_dict[self._target_mac].get("ip")
+                else:
+                    data["ip"] = "N/A"
             else:
                 data["stay_time"] = "N/A"
                 data["band"] = "N/A"
+                data["ip"] = "N/A"
         data["iptime_url"] = self._api._url
         self._state_attributes = data
         return data
