@@ -1,4 +1,4 @@
-"""Platform for tracker integration."""
+"""Platform for sensor integration."""
 from homeassistant.util import dt, slugify, Throttle  # for update interval
 from homeassistant.helpers.event import async_track_point_in_utc_time
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -170,7 +170,7 @@ class IPTimeAPI(DeviceScanner):
 
         if "iux" not in await response.text():
             self._ismobile = False
-            _LOGGER.debug(f"{self._url}: [{product_name}]This firmware is not supported the mobile app.")
+            _LOGGER.debug(f"{self._url}: [{product_name}] This firmware is not supported the mobile app.")
             return True
         if "iux_package_installed" not in await response.text():
             self._ismobile = True
@@ -244,7 +244,6 @@ class IPTimeAPI(DeviceScanner):
         except:
             return False
 
-
     async def login(self):
         """Login Function"""
         url = self._url + LOGIN_URN
@@ -288,7 +287,6 @@ class IPTimeAPI(DeviceScanner):
         except:
             if not response:
                 return False
-
             if response and self._ismobile:
                 if '<html><script> top.location = "/";</script></html>' in await response.text():
                     await self.verify_mobile()
@@ -340,15 +338,9 @@ class IPTimeAPI(DeviceScanner):
         url_2g = self._url + WLAN_2G_URN
         url_5g = self._url + WLAN_5G_URN
         cookies = {"efm_session_id": self.efm_session_id}
-        try:
-            response_2g = await self.session.get(url_2g, headers=self.headers, cookies=cookies, timeout=TIME_OUT)
-            response_5g = await self.session.get(url_5g, headers=self.headers, cookies=cookies, timeout=TIME_OUT)
-        except:
-            _LOGGER.debug(f"WLAN Connect Error > {self._url}")
-            await self.logout()
-            return result_dict
 
         try:
+            response_2g = await self.session.get(url_2g, headers=self.headers, cookies=cookies, timeout=TIME_OUT)
             soup = BeautifulSoup(await response_2g.text(), "html.parser")
             response_2g_list = soup.find_all("tr")
             response_2g_dict = self.device_parsing(response_2g_list, band="2.4GHz")
@@ -362,10 +354,12 @@ class IPTimeAPI(DeviceScanner):
             await self.logout()
             return {"session": False}
         except:
+            _LOGGER.debug(f"2.4G WLAN Connect Error > {self._url}")
             await self.logout()
             return result_dict
 
         try:
+            response_5g = await self.session.get(url_5g, headers=self.headers, cookies=cookies, timeout=TIME_OUT)
             soup = BeautifulSoup(await response_5g.text(), "html.parser")
             response_5g_list = soup.find_all("tr")
             response_5g_dict = self.device_parsing(response_5g_list, band="5GHz")
@@ -379,6 +373,7 @@ class IPTimeAPI(DeviceScanner):
             await self.logout()
             return {"session": False}
         except:
+            _LOGGER.debug(f"5G WLAN Connect Error > {self._url}")
             await self.logout()
             return result_dict
 
@@ -481,7 +476,7 @@ class IPTimeAPI(DeviceScanner):
                     ip = False
 
                 if "mac" in device:
-                    result_dict[device["mac"]] = {
+                    result_dict[device["mac"].replace(':', '-')] = {
                         "ip": ip,
                         "band": device['mode'],
                         "stay_time": connected_time,
@@ -543,7 +538,7 @@ class IPTimeSensor:
         """Initialize the sensor."""
         self._state = "N/A"
         self._entity_id = name
-        self._target_mac = mac
+        self._target_mac = mac.replace(':', '-')
         self._api = api
         self.result_dict = {}
         self.error_count = 0
@@ -616,7 +611,6 @@ class IPTimeSensor:
                     self.not_home_count += 1
                 else:
                     self._state = "not_home"
-
         else:
             if self.error_count < self.error_threshold:
                 self.error_count += 1
