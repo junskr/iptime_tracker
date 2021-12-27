@@ -350,9 +350,8 @@ class IPTimeAPI(DeviceScanner):
             await self.logout()
             return {"session": False}
         except KeyError:
-            _LOGGER.debug(f"Session Key Error(2.4g) > {self._url}")
-            await self.logout()
-            return {"session": False}
+            #_LOGGER.debug(f"Session Key Error(2.4g) > {self._url}")
+            result_dict['session'] = False
         except:
             _LOGGER.debug(f"2.4G WLAN Connect Error > {self._url}")
             await self.logout()
@@ -369,9 +368,8 @@ class IPTimeAPI(DeviceScanner):
             await self.logout()
             return {"session": False}
         except KeyError:
-            _LOGGER.debug(f"Session Key Error(5g) > {self._url}")
-            await self.logout()
-            return {"session": False}
+            #_LOGGER.debug(f"Session Key Error(5g) > {self._url}")
+            result_dict['session'] = False
         except:
             _LOGGER.debug(f"5G WLAN Connect Error > {self._url}")
             await self.logout()
@@ -382,13 +380,14 @@ class IPTimeAPI(DeviceScanner):
                 response_mesh_dict = await self.get_mesh_station()
                 result_dict.update(response_mesh_dict)
             except KeyError:
-                _LOGGER.debug(f"Mobile Session Key Error(Mesh) > {self._url}")
-                await self.logout()
-                return {"session": False}
+                #_LOGGER.debug(f"Session Key Error(Mesh) > {self._url}")
+                result_dict['session'] = False
             except:
                 await self.logout()
                 return result_dict
 
+        if not result_dict["session"]:
+            await self.logout()
         return result_dict
 
     async def m_wlan_check(self):
@@ -409,9 +408,8 @@ class IPTimeAPI(DeviceScanner):
             await self.m_logout()
             return {"session": False}
         except KeyError:
-            _LOGGER.debug(f"Mobile Session Key Error(2.4g) > {self._url}")
-            await self.m_logout()
-            return {"session": False}
+            #_LOGGER.debug(f"Mobile Session Key Error(2.4g) > {self._url}")
+            result_dict['session'] = False
         except:
             _LOGGER.debug(f"2.4G WLAN Connect Error > {self._url}")
             await self.m_logout()
@@ -427,9 +425,8 @@ class IPTimeAPI(DeviceScanner):
             await self.m_logout()
             return {"session": False}
         except KeyError:
-            _LOGGER.debug(f"Mobile Session Key Error(5g) > {self._url}")
-            await self.m_logout()
-            return {"session": False}
+            #_LOGGER.debug(f"Mobile Session Key Error(5g) > {self._url}")
+            result_dict['session'] = False
         except:
             _LOGGER.debug(f"5G WLAN Connect Error > {self._url}")
             await self.m_logout()
@@ -440,13 +437,14 @@ class IPTimeAPI(DeviceScanner):
                 response_mesh_dict = await self.get_mesh_station()
                 result_dict.update(response_mesh_dict)
             except KeyError:
-                _LOGGER.debug(f"Mobile Session Key Error(Mesh) > {self._url}")
-                await self.m_logout()
-                return {"session": False}
+                #_LOGGER.debug(f"Mobile Session Key Error(Mesh) > {self._url}")
+                result_dict['session'] = False
             except:
                 await self.m_logout()
                 return result_dict
 
+        if not result_dict["session"]:
+            await self.m_logout()
         return result_dict
 
     async def get_mesh_station(self):
