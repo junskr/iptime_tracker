@@ -28,7 +28,8 @@ ipTIME Tracker for Home Assistnat #HA
 | v1.2.1  | 2021.11.22  | Removed unnecessary log messages.                                                    |
 | v1.2.2  | 2021.11.23  | Changed the variable name. (scan_interval -> interval_seconds)                       |
 | v1.3.0  | 2021.11.24  | Update to support mesh networks.                                                     |
-| v1.3.1  | 2021.11.26  | Fixed bugs related to the Mesh networks.                                              |
+| v1.3.1  | 2021.11.26  | Fixed bugs related to the Mesh networks.                                             |
+| v1.3.2  | 2021.12.27  | Fixed bugs related to the Mesh networks.                                             |
 
 <br>
 
@@ -110,7 +111,7 @@ Configure the sensors that will scrape the data.
 ---
 
 [hacs-shield]: https://img.shields.io/badge/HACS-Custom-41BDF5
-[version-shield]: https://img.shields.io/badge/version-v1.3.1-blue
+[version-shield]: https://img.shields.io/badge/version-v1.3.2-blue
 [buymecoffee-shield]: https://img.shields.io/badge/buy%20me%20a%20coffee-donate-yellow.svg
 [buymecoffee]: https://www.buymeacoffee.com/junskr
 [github-repository]: https://github.com/junskr/iptime_tracker
