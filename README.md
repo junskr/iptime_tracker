@@ -31,6 +31,7 @@ ipTIME Tracker for Home Assistnat #HA
 | v1.3.1  | 2021.11.26  | Fixed bugs related to the Mesh networks.                                             |
 | v1.3.2  | 2021.12.27  | Fixed bugs related to the Mesh networks.                                             |
 | v1.4.0  | 2023.08.18  | Fixed bugs related to page requests.                                                 |
+| v1.5.0  | 2024.05.24  | Update to support Beta UI.                                                           |
 
 <br>
 
@@ -112,7 +113,7 @@ Configure the sensors that will scrape the data.
 ---
 
 [hacs-shield]: https://img.shields.io/badge/HACS-Custom-41BDF5
-[version-shield]: https://img.shields.io/badge/version-v1.4.0-blue
+[version-shield]: https://img.shields.io/badge/version-v1.5.0-blue
 [buymecoffee-shield]: https://img.shields.io/badge/buy%20me%20a%20coffee-donate-yellow.svg
 [buymecoffee]: https://www.buymeacoffee.com/junskr
 [github-repository]: https://github.com/junskr/iptime_tracker
