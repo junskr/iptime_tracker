@@ -1,7 +1,7 @@
 """Platform for sensor integration."""
 from homeassistant.util import dt, slugify, Throttle  # for update interval
 from homeassistant.helpers.event import async_track_point_in_utc_time
-# from homeassistant.helpers.aiohttp_client import async_get_clientsession
+#from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.components.device_tracker import PLATFORM_SCHEMA, DeviceScanner
 import homeassistant.helpers.config_validation as cv
 from homeassistant.components.device_tracker.const import CONF_SCAN_INTERVAL
@@ -36,6 +36,9 @@ from .const import (
     M_MESH_URN,
     MESH_STATION_URN,
     TIME_OUT,
+    BETA_UI_URN,
+    BETA_SERVICE_URN,
+    RSS_LIMIT
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -118,13 +121,16 @@ class IPTimeAPI(DeviceScanner):
         self._user_pw = user_pw
         self._ismobile = False
         self._ismesh = False
+        # 2024.05.07. Beta UI 지원
+        self._beta_ui = False
+
         self.result = {}
         if not "http" in url:
             self._url = "http://" + url
         else:
             self._url = url
 
-        self.headers = {
+        header_base = {
             "User-Agent": "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
             "Referer": self._url,
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
@@ -133,40 +139,115 @@ class IPTimeAPI(DeviceScanner):
             "Upgrade-Insecure-Requests": "1",
             "Content-type": "text/plain; charset=utf-8"
         }
+        self.headers = header_base.copy()
+        self.json_headers = header_base.copy()
+        self.headers['Content-type'] = "text/plain; charset=utf-8"
+        self.json_headers['Content-type'] = "application/json; charset=utf-8"
+
         self.efm_session_id = None
-        # self.session = async_get_clientsession(self._hass)
+        #self.session = async_get_clientsession(self._hass)
         self.loop = asyncio.get_event_loop()
 
     @Throttle(API_LIMIT_INTERVAL)
     async def async_update(self):
         """Update function for updating api information."""
-        # Step 3. (반복)로그인되어 있을 경우, 재실체크
+        # Step 4. (반복)로그인되어 있을 경우, 재실체크 수행
         if self.efm_session_id:
-            if self._ismobile:
+            if self._beta_ui:
+                self.result = await self.beta_ui_wlan_check()
+                await self.session_update_beta_ui()
+            elif self._ismobile:
                 self.result = await self.m_wlan_check()
             else:
                 self.result = await self.wlan_check()
 
         else:
-            # Step 1. (최초 1회)모바일 페이지 지원 여부 확인
+            # Step 1. (최초 1회)Beta UI 지원 여부 확인
+            if await self.verify_beta_ui():
+                # Beta UI를 지원하면
+                _LOGGER.info(f"[ipTIME-BetaUI] {self._url}")
+                self._beta_ui = True
+                await self.login_beta_ui()
+                return True
+
+            # Step 2. (최초 1회)모바일 페이지 지원 여부 확인
             if not await self.verify_mobile():
                 return False
 
-            # Step 2. (최초 1회)모바일 페이지 지원 - 로그인, MESH 체크, 재실체크
+            # Step 3. (최초 1회)모바일 페이지 지원 - 모바일 로그인, MESH 체크, 재실체크
             if self._ismobile:
+                _LOGGER.info(f"[ipTIME-Mobile] {self._url}")
                 if await self.m_login():
                     await self.m_check_mesh()
                     self.result = await self.m_wlan_check()
+                    return True
                 else:
                     return False
 
-            # Step 2. (최초 1회)모바일 페이지 미지원 - 로그인 MESH 체크, 재실체크
+            # Step 3. (최초 1회)모바일 페이지 미지원 - PC 로그인, MESH 체크, 재실체크
             else:
+                _LOGGER.info(f"[ipTIME-PC] {self._url}")
                 if await self.login():
                     await self.check_mesh()
                     self.result = await self.wlan_check()
+                    return True
                 else:
                     return False
+
+    async def verify_beta_ui(self):
+        """
+        # 2024.05.07. Beta UI 지원 (/ui/)
+        """
+        url = self._url + BETA_UI_URN
+        response = await self.loop.run_in_executor(None, lambda: requests.get(url, headers=self.headers, timeout=TIME_OUT))
+        try:
+            response = await self.loop.run_in_executor(None, lambda: requests.get(url, headers=self.headers, timeout=TIME_OUT))
+            if "/cgi/service.cgi" in response.text:
+                return True
+        except:
+            return False
+
+    async def login_beta_ui(self):
+        """
+        # 2024.05.07. Beta UI 지원 (/)
+        """
+        url = self._url + BETA_SERVICE_URN
+        data = {
+            "method":"session/login",
+            "params":{
+                "id": self._user_id,
+                "pw": self._user_pw
+            }
+        }
+        response = await self.loop.run_in_executor(None, lambda: requests.post(url, headers=self.json_headers, json=data, timeout=TIME_OUT))
+        response_json = response.json()
+        if response_json['result']:
+            self.efm_session_id = response.cookies['efm_session_id']
+            _LOGGER.debug(f"{self._url}: (B)Login Success !! [{self.efm_session_id}]")
+        else:
+            if response_json['error']:
+                if response_json['error']['code'] == -31996:
+                    _LOGGER.error(f"{self._url}: (B)Login Fail !!")
+                elif response_json['error']['code'] == -31997:
+                    _LOGGER.error(f"{self._url}: (B)Login Fail !! Check Captcha settings.")
+                else:
+                    _LOGGER.error(f"{self._url}: (B)Login Fail !!")
+                    _LOGGER.debug(response_json['error'])
+
+    async def session_update_beta_ui(self):
+        """
+        # 2024.05.07. Beta UI 지원 (/)
+        """
+        url = self._url + BETA_SERVICE_URN
+        cookies = {"efm_session_id": self.efm_session_id}
+        data = {
+            "method":"session/update"
+        }
+        try:
+            response = await self.loop.run_in_executor(None, lambda: requests.post(url, headers=self.json_headers, json=data, cookies=cookies, timeout=TIME_OUT))
+        except:
+            return False
+        #_LOGGER.debug(f"[BetaUI 세션유지 테스트] {response.json()}")
 
     async def verify_mobile(self):
         """
@@ -195,6 +276,7 @@ class IPTimeAPI(DeviceScanner):
             #    url, headers=self.headers, timeout=TIME_OUT
             # )
             response = await self.loop.run_in_executor(None, lambda: requests.get(url, headers=self.headers, timeout=TIME_OUT))
+            #_LOGGER.info(f"[verify_mobile response] {response.text}")
 
             product_name = (
                 re.search(
@@ -306,6 +388,7 @@ class IPTimeAPI(DeviceScanner):
 
         try:
             response = await self.loop.run_in_executor(None, lambda: requests.post(url, headers=self.headers, data=data, timeout=TIME_OUT))
+            #_LOGGER.info(f"[login_response] {response.text}")
             # response = await self.session.post(
             #     url, headers=self.headers, data=data, timeout=TIME_OUT
             # )
@@ -382,7 +465,7 @@ class IPTimeAPI(DeviceScanner):
 
         if self.efm_session_id:
             _LOGGER.debug(
-                f"{self._url}: Login Success !! [{self.efm_session_id}]")
+                f"{self._url}: M_Login Success !! [{self.efm_session_id}]")
             return True
         else:
             _LOGGER.error(f"{self._url}: Login Fail !!")
@@ -479,6 +562,74 @@ class IPTimeAPI(DeviceScanner):
             await self.logout()
         return result_dict
 
+    async def beta_ui_wlan_check(self):
+        """Wlan Check Function for Beta UI
+        # 2024.05.07. Beta UI 지원 (/)
+        """
+        url = self._url + BETA_SERVICE_URN
+        cookies = {"efm_session_id": self.efm_session_id}
+        data = {
+            "method":"network/interface/lan/stations"
+        }
+        try:
+            response = await self.loop.run_in_executor(None, lambda: requests.post(url, headers=self.json_headers, json=data, cookies=cookies, timeout=TIME_OUT))
+            response_json = response.json()
+        except:
+            return {"session": False}
+
+        result_dict = dict()
+        if response_json['result']:
+            result_dict = self.beta_ui_device_parsing(response_json['result'])
+            result_dict["session"] = True
+        else:
+            error_dict = response_json.get('error')
+            if error_dict:
+                if error_dict.get('code') == -31998:
+                    # Unauthenticated
+                    self.efm_session_id = None
+                    result_dict = {"session": False}
+                else:
+                    result_dict = {"session": False}
+            else:
+                result_dict = {"session": True}
+
+        #_LOGGER.debug(f"[DevLog-BetaUI-WLAN] {result_dict}")
+        return result_dict
+
+    def beta_ui_device_parsing(self, device_list):
+        result_dict = dict()
+        for device in device_list:
+            connect_type = device['connection']['type']
+            if connect_type != 'wireless':
+                continue
+
+            bss = device['connection'][connect_type]['bss']
+            if bss == '5g.1':
+                band = "5GHz"
+            elif bss == '2g.1':
+                band = "2.4GHz"
+            else:
+                band = bss
+
+            rss = device['connection'][connect_type]['rssi']
+            if rss < RSS_LIMIT:
+                state = "not_home"
+            else:
+                state = "home"
+
+            result_dict[device['mac'].replace(":", "-")] = {
+                "ip": device['info']['ip'],
+                "band": band,
+                "stay_time": device['connection'][connect_type]['duration'],
+                "rssi": rss,
+                "down_speed": device['connection'][connect_type]['down_speed'],
+                "up_speed": device['connection'][connect_type]['up_speed'],
+                "down_bytes": device['connection'][connect_type]['down_bytes'],
+                "up_bytes": device['connection'][connect_type]['up_bytes'],
+                "state": state
+            }
+        return result_dict
+
     async def m_wlan_check(self):
         """Wlan Check Function"""
         result_dict = {}
@@ -501,6 +652,7 @@ class IPTimeAPI(DeviceScanner):
             await self.m_logout()
             return {"session": False}
         except KeyError:
+            # 유선공유기일 경우 이곳 KeyError 발생
             # _LOGGER.debug(f"Mobile Session Key Error(2.4g) > {self._url}")
             result_dict["session"] = False
         except:
@@ -521,6 +673,7 @@ class IPTimeAPI(DeviceScanner):
             await self.m_logout()
             return {"session": False}
         except KeyError:
+            # 유선공유기일 경우 이곳 KeyError 발생
             # _LOGGER.debug(f"Mobile Session Key Error(5g) > {self._url}")
             result_dict["session"] = False
         except:
@@ -637,7 +790,7 @@ class IPTimeAPI(DeviceScanner):
 class IPTimeSensor:
     """Representation of a Sensor."""
 
-    def __init__(self, name, mac, api):
+    def __init__(self, name, mac, api) -> None:
         """Initialize the sensor."""
         self._state = "N/A"
         self._entity_id = name
@@ -676,20 +829,28 @@ class IPTimeSensor:
         data = {}
         data["name"] = self._entity_id
         data["mac_address"] = self._target_mac
+        data["iptime_url"] = self._api._url
         if self.result_dict:
             if self._target_mac in self.result_dict:
-                data["stay_time"] = self.result_dict[self._target_mac].get(
-                    "stay_time")
-                data["band"] = self.result_dict[self._target_mac].get("band")
-                if self.result_dict[self._target_mac].get("ip"):
-                    data["ip"] = self.result_dict[self._target_mac].get("ip")
-                else:
-                    data["ip"] = "N/A"
+                data["stay_time"] = self.result_dict[self._target_mac].get("stay_time", "N/A")
+                data["band"] = self.result_dict[self._target_mac].get("band", "N/A")
+                data["ip"] = self.result_dict[self._target_mac].get("ip", "N/A")
+                # for Beta UI
+                data["rssi"] = self.result_dict[self._target_mac].get("rssi", "N/A")
+                data["up_speed"] = self.result_dict[self._target_mac].get("up_speed", "N/A")
+                data["down_speed"] = self.result_dict[self._target_mac].get("down_speed", "N/A")
+                data["up_bytes"] = self.result_dict[self._target_mac].get("up_bytes", "N/A")
+                data["down_bytes"] = self.result_dict[self._target_mac].get("down_bytes", "N/A")
             else:
                 data["stay_time"] = "N/A"
                 data["band"] = "N/A"
                 data["ip"] = "N/A"
-        data["iptime_url"] = self._api._url
+                # for Beta UI
+                data["rssi"] = "N/A"
+                data["up_speed"] = "N/A"
+                data["down_speed"] = "N/A"
+                data["up_bytes"] = "N/A"
+                data["down_bytes"] = "N/A"
         self._state_attributes = data
         return data
 
