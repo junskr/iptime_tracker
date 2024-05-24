@@ -7,6 +7,7 @@ CONF_TARGET = 'targets'
 CONF_NAME = 'name'
 CONF_MAC = 'mac'
 DEFAULT_INTERVAL = 5
+RSS_LIMIT = -81
 
 HOSTINFO_URN = '/login/hostinfo2.cgi'
 LOGIN_URN = '/sess-bin/login_handler.cgi'
@@ -20,4 +21,6 @@ M_WLAN_2G_URN = '/cgi/iux_get.cgi?tmenu=wirelessconf&smenu=macauth&act=status&wl
 M_WLAN_5G_URN = '/cgi/iux_get.cgi?tmenu=wirelessconf&smenu=macauth&act=status&wlmode=5g&bssidx=65536'
 M_MESH_URN = '/cgi/iux_get.cgi?tmenu=sysconf&smenu=info&act=status'
 MESH_STATION_URN = '/easymesh/api.cgi?key=topology'
+BETA_UI_URN = '/ui/'
+BETA_SERVICE_URN = '/cgi/service.cgi'
 TIME_OUT = 5
