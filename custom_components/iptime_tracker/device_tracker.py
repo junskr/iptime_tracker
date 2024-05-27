@@ -167,8 +167,11 @@ class IPTimeAPI(DeviceScanner):
                 # Beta UI를 지원하면
                 _LOGGER.info(f"[ipTIME-BetaUI] {self._url}")
                 self._beta_ui = True
-                await self.login_beta_ui()
-                return True
+                if await self.login_beta_ui():
+                    await self.beta_ui_check_mesh()
+                    return True
+                else:
+                    return False
 
             # Step 2. (최초 1회)모바일 페이지 지원 여부 확인
             if not await self.verify_mobile():
@@ -224,15 +227,20 @@ class IPTimeAPI(DeviceScanner):
         if response_json['result']:
             self.efm_session_id = response.cookies['efm_session_id']
             _LOGGER.debug(f"{self._url}: (B)Login Success !! [{self.efm_session_id}]")
+            return True
         else:
             if response_json['error']:
                 if response_json['error']['code'] == -31996:
                     _LOGGER.error(f"{self._url}: (B)Login Fail !!")
+                    return False
                 elif response_json['error']['code'] == -31997:
                     _LOGGER.error(f"{self._url}: (B)Login Fail !! Check Captcha settings.")
+                    return False
                 else:
                     _LOGGER.error(f"{self._url}: (B)Login Fail !!")
                     _LOGGER.debug(response_json['error'])
+                    return False
+        return False
 
     async def session_update_beta_ui(self):
         """
@@ -343,7 +351,7 @@ class IPTimeAPI(DeviceScanner):
             # response = await self.session.get(
             #    url, headers=self.headers, cookies=cookies, timeout=TIME_OUT
             # )
-            response = await self.loop.run_in_executor(None, lambda: requests.get(url, headers=self.headers, timeout=TIME_OUT))
+            response = await self.loop.run_in_executor(None, lambda: requests.get(url, headers=self.headers, cookies=cookies, timeout=TIME_OUT))
             soup = BeautifulSoup(response.text, "html.parser")
             mesh_mode = soup.find("input", attrs={"id": "mode_none"})
             if not mesh_mode:
@@ -361,6 +369,7 @@ class IPTimeAPI(DeviceScanner):
     async def m_check_mesh(self):
         url = self._url + M_MESH_URN
         cookies = {"efm_session_id": self.efm_session_id}
+        response = await self.loop.run_in_executor(None, lambda: requests.get(url, headers=self.headers, cookies=cookies, timeout=TIME_OUT))
         try:
             response = await self.loop.run_in_executor(None, lambda: requests.get(url, headers=self.headers, cookies=cookies, timeout=TIME_OUT))
             # response = await self.session.get(
@@ -376,6 +385,28 @@ class IPTimeAPI(DeviceScanner):
                 return False
         except:
             return False
+
+    async def beta_ui_check_mesh(self):
+        """
+        # 2024.05.27. Beta UI 지원 (/)
+        """
+        url = self._url + BETA_SERVICE_URN
+        cookies = {"efm_session_id": self.efm_session_id}
+        data = {
+            "method":"easymesh/info"
+        }
+        response = await self.loop.run_in_executor(None, lambda: requests.post(url, headers=self.json_headers, cookies=cookies, json=data,timeout=TIME_OUT))
+
+        response_json = response.json()
+        if response_json['result']:
+            active = response_json['result'].get('active')
+            if active:
+                self._ismesh = True
+                return False
+            else:
+                self._ismesh = False
+                return False
+        return False
 
     async def login(self):
         """Login Function"""
@@ -580,6 +611,16 @@ class IPTimeAPI(DeviceScanner):
         result_dict = dict()
         if response_json['result']:
             result_dict = self.beta_ui_device_parsing(response_json['result'])
+            if self._ismesh:
+                try:
+                    response_mesh_dict = await self.get_mesh_station()
+                    result_dict.update(response_mesh_dict)
+                except KeyError:
+                    # _LOGGER.debug(f"Session Key Error(Mesh) > {self._url}")
+                    result_dict["session"] = False
+                except:
+                    await self.logout()
+                    return result_dict
             result_dict["session"] = True
         else:
             error_dict = response_json.get('error')
@@ -617,10 +658,15 @@ class IPTimeAPI(DeviceScanner):
             else:
                 state = "home"
 
+            connected_seconds = device['connection'][connect_type]['duration']
+            days = timedelta(seconds=connected_seconds).days
+            (hours, minutes, seconds) = str(timedelta(seconds=connected_seconds)).split(":")
+            connected_time = f"{days}일 {hours}시간 {minutes}분 {seconds}초"
+
             result_dict[device['mac'].replace(":", "-")] = {
                 "ip": device['info']['ip'],
                 "band": band,
-                "stay_time": device['connection'][connect_type]['duration'],
+                "stay_time": connected_time,
                 "rssi": rss,
                 "down_speed": device['connection'][connect_type]['down_speed'],
                 "up_speed": device['connection'][connect_type]['up_speed'],
@@ -718,25 +764,45 @@ class IPTimeAPI(DeviceScanner):
                 and device["connection"] != "Unknown"
                 and device["connection"] != "WIRED"
             ):
-                connected_seconds = device["timestamp"] - \
-                    device["connected_ts"]
-                days = timedelta(seconds=connected_seconds).days
-                (hours, minutes, seconds) = str(
-                    timedelta(seconds=connected_seconds)
-                ).split(":")
-                connected_time = f"{days}일 {hours}시간 {minutes}분 {seconds}초"
-                if "ip" in device:
-                    ip = device["ip"]
-                else:
-                    ip = False
-
                 if "mac" in device:
+                    connected_seconds = device["timestamp"] - \
+                        device["connected_ts"]
+                    days = timedelta(seconds=connected_seconds).days
+                    (hours, minutes, seconds) = str(
+                        timedelta(seconds=connected_seconds)
+                    ).split(":")
+                    connected_time = f"{days}일 {hours}시간 {minutes}분 {seconds}초"
+                    if "ip" in device:
+                        ip = device["ip"]
+                    else:
+                        ip = "N/A"
+
+                    rss = device.get('rssi')
+                    if rss and rss < RSS_LIMIT:
+                        state = "not_home"
+                    else:
+                        state = "home"
+
+                    bss = device["mode"]
+                    if bss == '5G':
+                        band = "5GHz"
+                    elif bss == '2.4G':
+                        band = "2.4GHz"
+                    else:
+                        band = bss
+
                     result_dict[device["mac"].replace(":", "-")] = {
                         "ip": ip,
-                        "band": device["mode"],
+                        "band": band,
                         "stay_time": connected_time,
-                        "state": "home",
+                        "rssi": rss,
+                        "state": state,
+                        "down_speed": device.get('down_speed'),
+                        "up_speed": device.get('up_speed'),
+                        "down_bytes": device.get('down_bytes'),
+                        "up_bytes": device.get('up_bytes'),
                     }
+
         return result_dict
 
     def device_parsing(self, response_list, band):
@@ -753,7 +819,7 @@ class IPTimeAPI(DeviceScanner):
                             r"\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3}"), gray_text.text
                     ).group()
                 else:
-                    ip = False
+                    ip = "N/A"
                 result_dict[device.find_all("td")[0].text] = {
                     "ip": ip,
                     "band": band,
