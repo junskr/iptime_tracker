@@ -164,11 +164,12 @@ class IPTimeAPI(DeviceScanner):
         else:
             # Step 1. (최초 1회)Beta UI 지원 여부 확인
             if await self.verify_beta_ui():
-                # Beta UI를 지원하면
+                # Beta UI를 지원하면 - Beta UI 로그인, MESH 체크, 재실체크
                 _LOGGER.info(f"[ipTIME-BetaUI] {self._url}")
                 self._beta_ui = True
                 if await self.login_beta_ui():
                     await self.beta_ui_check_mesh()
+                    await self.beta_ui_wlan_check()
                     return True
                 else:
                     return False
@@ -369,7 +370,6 @@ class IPTimeAPI(DeviceScanner):
     async def m_check_mesh(self):
         url = self._url + M_MESH_URN
         cookies = {"efm_session_id": self.efm_session_id}
-        response = await self.loop.run_in_executor(None, lambda: requests.get(url, headers=self.headers, cookies=cookies, timeout=TIME_OUT))
         try:
             response = await self.loop.run_in_executor(None, lambda: requests.get(url, headers=self.headers, cookies=cookies, timeout=TIME_OUT))
             # response = await self.session.get(
@@ -617,9 +617,10 @@ class IPTimeAPI(DeviceScanner):
                     result_dict.update(response_mesh_dict)
                 except KeyError:
                     # _LOGGER.debug(f"Session Key Error(Mesh) > {self._url}")
-                    result_dict["session"] = False
+                    result_dict = {"session": False}
+                    return result_dict
                 except:
-                    await self.logout()
+                    result_dict = {"session": False}
                     return result_dict
             result_dict["session"] = True
         else:
