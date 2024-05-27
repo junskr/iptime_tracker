@@ -33,6 +33,7 @@ ipTIME Tracker for Home Assistnat #HA
 | v1.4.0  | 2023.08.18  | Fixed bugs related to page requests.                                                 |
 | v1.5.0  | 2024.05.24  | Update to support Beta UI.                                                           |
 | v1.6.0  | 2024.05.27  | Update to support mesh networks for Beta UI.                                         |
+| v1.6.1  | 2024.05.27  | Removed output functions for debugging.                                              |
 
 <br>
 
