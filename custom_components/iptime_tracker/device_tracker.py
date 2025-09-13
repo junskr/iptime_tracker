@@ -202,12 +202,18 @@ class IPTimeAPI(DeviceScanner):
         """
         # 2024.05.07. Beta UI 지원 (/ui/)
         """
-        url = self._url + BETA_UI_URN
-        response = await self.loop.run_in_executor(None, lambda: requests.get(url, headers=self.headers, timeout=TIME_OUT))
         try:
+            # 2025.07.03. iptime 펌웨어 15.10.2 버전부터 "/cgi/service.cgi" 문자열 위치가 변경됨
+            url = self._url + BETA_UI_URN + "flutter_bootstrap.js"
             response = await self.loop.run_in_executor(None, lambda: requests.get(url, headers=self.headers, timeout=TIME_OUT))
             if "/cgi/service.cgi" in response.text:
                 return True
+            else:
+                url = self._url + BETA_UI_URN
+                response = await self.loop.run_in_executor(None, lambda: requests.get(url, headers=self.headers, timeout=TIME_OUT))
+                if "/cgi/service.cgi" in response.text:
+                    return True
+            return False
         except:
             return False
 
