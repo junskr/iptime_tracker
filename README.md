@@ -34,6 +34,7 @@ ipTIME Tracker for Home Assistnat #HA
 | v1.5.0  | 2024.05.24  | Update to support Beta UI.                                                           |
 | v1.6.0  | 2024.05.27  | Update to support mesh networks for Beta UI.                                         |
 | v1.6.1  | 2024.05.27  | Removed output functions for debugging.                                              |
+| v1.6.2  | 2025.09.14  | Fixed compatibility with beta UI changes.                                            |
 
 <br>
 
@@ -115,7 +116,7 @@ Configure the sensors that will scrape the data.
 ---
 
 [hacs-shield]: https://img.shields.io/badge/HACS-Custom-41BDF5
-[version-shield]: https://img.shields.io/badge/version-v1.6.1-blue
+[version-shield]: https://img.shields.io/badge/version-v1.6.2-blue
 [buymecoffee-shield]: https://img.shields.io/badge/buy%20me%20a%20coffee-donate-yellow.svg
 [buymecoffee]: https://www.buymeacoffee.com/junskr
 [github-repository]: https://github.com/junskr/iptime_tracker
