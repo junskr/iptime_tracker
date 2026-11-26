@@ -201,17 +201,22 @@ class IPTimeAPI(DeviceScanner):
     async def verify_beta_ui(self):
         """
         # 2024.05.07. Beta UI 지원 (/ui/)
+        # FIX: Blocking Call 오류 수정 (2025.11.19) - .text 접근을 executor 내부로 이동
         """
         try:
             # 2025.07.03. iptime 펌웨어 15.10.2 버전부터 "/cgi/service.cgi" 문자열 위치가 변경됨
             url = self._url + BETA_UI_URN + "flutter_bootstrap.js"
-            response = await self.loop.run_in_executor(None, lambda: requests.get(url, headers=self.headers, timeout=TIME_OUT))
-            if "/cgi/service.cgi" in response.text:
+            # 수정됨: requests.get(...).text 전체를 쓰레드에서 실행
+            response_text = await self.loop.run_in_executor(None, lambda: requests.get(url, headers=self.headers, timeout=TIME_OUT).text)
+            
+            if "/cgi/service.cgi" in response_text:
                 return True
             else:
                 url = self._url + BETA_UI_URN
-                response = await self.loop.run_in_executor(None, lambda: requests.get(url, headers=self.headers, timeout=TIME_OUT))
-                if "/cgi/service.cgi" in response.text:
+                # 수정됨: requests.get(...).text 전체를 쓰레드에서 실행
+                response_text = await self.loop.run_in_executor(None, lambda: requests.get(url, headers=self.headers, timeout=TIME_OUT).text)
+                
+                if "/cgi/service.cgi" in response_text:
                     return True
             return False
         except:
@@ -290,12 +295,15 @@ class IPTimeAPI(DeviceScanner):
             # response = await self.session.get(
             #    url, headers=self.headers, timeout=TIME_OUT
             # )
-            response = await self.loop.run_in_executor(None, lambda: requests.get(url, headers=self.headers, timeout=TIME_OUT))
+            
+            # FIX: 텍스트 디코딩을 executor 내부에서 수행
+            response_text = await self.loop.run_in_executor(None, lambda: requests.get(url, headers=self.headers, timeout=TIME_OUT).text)
+            
             #_LOGGER.info(f"[verify_mobile response] {response.text}")
 
             product_name = (
                 re.search(
-                    re.compile(r"product_name=[ a-zA-Z0-9]+"), response.text
+                    re.compile(r"product_name=[ a-zA-Z0-9]+"), response_text
                 )
                 .group()
                 .split("=")[1]
@@ -304,26 +312,26 @@ class IPTimeAPI(DeviceScanner):
             _LOGGER.error(f"{self._url}: The page cannot be accessed.")
             return True  # False
 
-        if "iux" not in response.text:
+        if "iux" not in response_text:
             self._ismobile = False
             _LOGGER.debug(
                 f"{self._url}: [{product_name}] This firmware is not supported the mobile app."
             )
             return True
-        if "iux_package_installed" not in response.text:
+        if "iux_package_installed" not in response_text:
             self._ismobile = True
             # _LOGGER.debug(f"{self._url}: This firmware already contains the mobile package.")
             return True
 
         try:
             iux = int(
-                re.search(re.compile(r"iux=\d"), response.text)
+                re.search(re.compile(r"iux=\d"), response_text)
                 .group()
                 .split("=")[1]
             )
             iux_package_installed = int(
                 re.search(
-                    re.compile(r"iux_package_installed=\d"), response.text
+                    re.compile(r"iux_package_installed=\d"), response_text
                 )
                 .group()
                 .split("=")[1]
@@ -358,8 +366,10 @@ class IPTimeAPI(DeviceScanner):
             # response = await self.session.get(
             #    url, headers=self.headers, cookies=cookies, timeout=TIME_OUT
             # )
-            response = await self.loop.run_in_executor(None, lambda: requests.get(url, headers=self.headers, cookies=cookies, timeout=TIME_OUT))
-            soup = BeautifulSoup(response.text, "html.parser")
+            # FIX: 텍스트 디코딩을 executor 내부에서 수행
+            response_text = await self.loop.run_in_executor(None, lambda: requests.get(url, headers=self.headers, cookies=cookies, timeout=TIME_OUT).text)
+            
+            soup = BeautifulSoup(response_text, "html.parser")
             mesh_mode = soup.find("input", attrs={"id": "mode_none"})
             if not mesh_mode:
                 self._ismesh = False
@@ -377,11 +387,13 @@ class IPTimeAPI(DeviceScanner):
         url = self._url + M_MESH_URN
         cookies = {"efm_session_id": self.efm_session_id}
         try:
-            response = await self.loop.run_in_executor(None, lambda: requests.get(url, headers=self.headers, cookies=cookies, timeout=TIME_OUT))
+            # FIX: 텍스트 디코딩을 executor 내부에서 수행
+            response_text = await self.loop.run_in_executor(None, lambda: requests.get(url, headers=self.headers, cookies=cookies, timeout=TIME_OUT).text)
+            
             # response = await self.session.get(
             #     url, headers=self.headers, cookies=cookies, timeout=TIME_OUT
             # )
-            response_json = loads(response.text)
+            response_json = loads(response_text)
 
             if "easymesh" in response_json:
                 self._ismesh = True
@@ -421,29 +433,30 @@ class IPTimeAPI(DeviceScanner):
             "username": self._user_id,
             "passwd": self._user_pw,
         }
-        response = None
-
+        
         try:
-            response = await self.loop.run_in_executor(None, lambda: requests.post(url, headers=self.headers, data=data, timeout=TIME_OUT))
+            # FIX: 텍스트 디코딩을 executor 내부에서 수행
+            response_text = await self.loop.run_in_executor(None, lambda: requests.post(url, headers=self.headers, data=data, timeout=TIME_OUT).text)
+            
             #_LOGGER.info(f"[login_response] {response.text}")
             # response = await self.session.post(
             #     url, headers=self.headers, data=data, timeout=TIME_OUT
             # )
             self.efm_session_id = re.findall(
-                re.compile(r"\w{16}"), response.text
+                re.compile(r"\w{16}"), response_text
             )[0]
         except:
-            if not response:
+            if not response_text: # type: ignore
                 return False
             elif (
                 '<html><script>parent.parent.location = "/sess-bin/login_session.cgi?noauto=1"; //session_timeout </script></html>'
-                in response.text
+                in response_text
             ):
                 _LOGGER.error(
                     f"{self._url}: Login Fail !! Please check your login account."
                 )
             else:
-                _LOGGER.debug(response.text)
+                _LOGGER.debug(response_text)
             return False
 
         if self.efm_session_id:
@@ -461,42 +474,43 @@ class IPTimeAPI(DeviceScanner):
             "username": self._user_id,
             "passwd": self._user_pw,
         }
-        response = None
-
+        
         try:
-            response = await self.loop.run_in_executor(None, lambda: requests.post(url, headers=self.headers, data=data, timeout=TIME_OUT))
+            # FIX: 텍스트 디코딩을 executor 내부에서 수행
+            response_text = await self.loop.run_in_executor(None, lambda: requests.post(url, headers=self.headers, data=data, timeout=TIME_OUT).text)
+            
             # response = await self.session.post(
             #     url, headers=self.headers, data=data, timeout=TIME_OUT
             # )
             self.efm_session_id = re.findall(
-                re.compile(r"\w{16}"), response.text
+                re.compile(r"\w{16}"), response_text
             )[0]
         except:
-            if not response:
+            if not response_text: # type: ignore
                 return False
-            if response and self._ismobile:
+            if response_text and self._ismobile:
                 if (
                     '<html><script> top.location = "/";</script></html>'
-                    in response.text
+                    in response_text
                 ):
                     await self.verify_mobile()
                     return False
                 elif (
                     '<html><script> if(parent && parent.parent) parent.parent.location = "/";</script></html>'
-                    in response.text
+                    in response_text
                 ):
                     await self.verify_mobile()
                     return False
                 elif (
                     '<html><script>parent.parent.location = "/m_login.cgi?noauto=1"; //session_timeout </script></html>'
-                    in response.text
+                    in response_text
                 ):
                     _LOGGER.error(
                         f"{self._url}: Login Fail !! Please check your login account."
                     )
                     return False
                 else:
-                    _LOGGER.debug(response.text)
+                    _LOGGER.debug(response_text)
             else:
                 return False
 
@@ -544,8 +558,10 @@ class IPTimeAPI(DeviceScanner):
             # response_2g = await self.session.get(
             #     url_2g, headers=self.headers, cookies=cookies, timeout=TIME_OUT
             # )
-            response_2g = await self.loop.run_in_executor(None, lambda: requests.get(url_2g, headers=self.headers, cookies=cookies, timeout=TIME_OUT))
-            soup = BeautifulSoup(response_2g.text, "html.parser")
+            # FIX: 텍스트 디코딩을 executor 내부에서 수행
+            response_2g_text = await self.loop.run_in_executor(None, lambda: requests.get(url_2g, headers=self.headers, cookies=cookies, timeout=TIME_OUT).text)
+            
+            soup = BeautifulSoup(response_2g_text, "html.parser")
             response_2g_list = soup.find_all("tr")
             response_2g_dict = self.device_parsing(
                 response_2g_list, band="2.4GHz")
@@ -566,8 +582,10 @@ class IPTimeAPI(DeviceScanner):
             # response_5g = await self.session.get(
             #     url_5g, headers=self.headers, cookies=cookies, timeout=TIME_OUT
             # )
-            response_5g = await self.loop.run_in_executor(None, lambda: requests.get(url_5g, headers=self.headers, cookies=cookies, timeout=TIME_OUT))
-            soup = BeautifulSoup(response_5g.text, "html.parser")
+            # FIX: 텍스트 디코딩을 executor 내부에서 수행
+            response_5g_text = await self.loop.run_in_executor(None, lambda: requests.get(url_5g, headers=self.headers, cookies=cookies, timeout=TIME_OUT).text)
+            
+            soup = BeautifulSoup(response_5g_text, "html.parser")
             response_5g_list = soup.find_all("tr")
             response_5g_dict = self.device_parsing(
                 response_5g_list, band="5GHz")
@@ -692,11 +710,13 @@ class IPTimeAPI(DeviceScanner):
         cookies = {"efm_session_id": self.efm_session_id}
 
         try:
-            response_2g = await self.loop.run_in_executor(None, lambda: requests.get(url_2g, headers=self.headers, cookies=cookies, timeout=TIME_OUT))
+            # FIX: 텍스트 디코딩을 executor 내부에서 수행
+            response_2g_text = await self.loop.run_in_executor(None, lambda: requests.get(url_2g, headers=self.headers, cookies=cookies, timeout=TIME_OUT).text)
+            
             # response_2g = await self.session.get(
             #     url_2g, headers=self.headers, cookies=cookies, timeout=TIME_OUT
             # )
-            response_2g_json = loads(response_2g.text)
+            response_2g_json = loads(response_2g_text)
             response_2g_dict = self.json_parsing(
                 response_2g_json, band="2.4GHz")
             result_dict.update(response_2g_dict)
@@ -714,11 +734,13 @@ class IPTimeAPI(DeviceScanner):
             return result_dict
 
         try:
-            response_5g = await self.loop.run_in_executor(None, lambda: requests.get(url_5g, headers=self.headers, cookies=cookies, timeout=TIME_OUT))
+            # FIX: 텍스트 디코딩을 executor 내부에서 수행
+            response_5g_text = await self.loop.run_in_executor(None, lambda: requests.get(url_5g, headers=self.headers, cookies=cookies, timeout=TIME_OUT).text)
+            
             # response_5g = await self.session.get(
             #     url_5g, headers=self.headers, cookies=cookies, timeout=TIME_OUT
             # )
-            response_5g_json = loads(response_5g.text)
+            response_5g_json = loads(response_5g_text)
             response_5g_dict = self.json_parsing(response_5g_json, band="5GHz")
             result_dict.update(response_5g_dict)
         except ValueError:
@@ -756,11 +778,13 @@ class IPTimeAPI(DeviceScanner):
         url = self._url + MESH_STATION_URN
         cookies = {"efm_session_id": self.efm_session_id}
         try:
-            response = await self.loop.run_in_executor(None, lambda: requests.get(url, headers=self.headers, cookies=cookies, timeout=TIME_OUT))
+            # FIX: 텍스트 디코딩을 executor 내부에서 수행
+            response_text = await self.loop.run_in_executor(None, lambda: requests.get(url, headers=self.headers, cookies=cookies, timeout=TIME_OUT).text)
+            
             # response = await self.session.get(
             #     url, headers=self.headers, cookies=cookies, timeout=TIME_OUT
             # )
-            device_list = loads(response.text)["station"]
+            device_list = loads(response_text)["station"]
         except:
             raise KeyError()
 
